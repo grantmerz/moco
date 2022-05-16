@@ -3,10 +3,11 @@ import argparse
 from collections import OrderedDict
 
 import torch
+import torch.nn as nn
 import logging
 
 import models.resnet
-from utils.YParams import YParams
+#from utils.YParams import YParams
 from utils.data_loader import get_data_loader
 import torchvision.models as basemodels
 
@@ -43,15 +44,17 @@ def load_experiment(yaml_config_file='./config/photoz.yaml', config='default', l
 
 def load_model_from_checkpoint(checkpoint_path, basenet=False, num_channels=3, num_classes=128, device="cpu",mlp=False):
   if basenet:
-    model = basemodels.resnet50().to(device)
+    model = basemodels.resnet50()#.to(device)
 
   else:
-    model = models.resnet.resnet50(num_channels=num_channels, num_classes=num_classes).to(device)
+    model = models.resnet.resnet50(num_channels=num_channels, num_classes=num_classes)#.to(device)
     
   if mlp:
     dim_mlp = model.fc.weight.shape[1]
     model.fc = nn.Sequential(nn.Linear(dim_mlp, dim_mlp), nn.ReLU(), model.fc)
 
+  model = model.to(device)
+    
   logging.info("Loading checkpoint %s"%checkpoint_path)
   restore_checkpoint(model, checkpoint_path,mlp)
 
