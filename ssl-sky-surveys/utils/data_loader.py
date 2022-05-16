@@ -1,20 +1,14 @@
-#import logging
-#import glob
+import logging
+import glob
 import torch
 import random
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
-import torchvision.datasets as datasets
-
 import torchvision.transforms as transforms
-import os
-#import skimage.transform
-#import h5py
-#from utils.sdss_dr12_galactic_reddening import SDSSDR12Reddening
-
-import sys
-sys.path.append('/home/g4merz/galaxyQuery/moco')
+import skimage.transform
+import h5py
+from utils.sdss_dr12_galactic_reddening import SDSSDR12Reddening
 
 class RandomRotate:
   def __call__(self, image):
@@ -37,47 +31,28 @@ class JitterCrop:
 
     return image[(center_x-self.offset):(center_x+self.offset), (center_y-self.offset):(center_y+self.offset)]
 
-def get_data_loader(data, aug_plus, crop_size, jc_jit_limit, distributed):
+def get_data_loader(params, files_pattern, distributed, is_train, load_specz):
+  if is_train:
+    transform = transforms.Compose([SDSSDR12Reddening(deredden=True),
+                                    RandomRotate(),
+                                    JitterCrop(outdim=params.crop_size, jitter_lim=params.jc_jit_limit),
+                                    transforms.ToTensor()])
+  else:
+    transform = transforms.Compose([SDSSDR12Reddening(deredden=True),
+                                    JitterCrop(outdim=params.crop_size),
+                                    transforms.ToTensor()])
 
-    traindir = os.path.join(data, 'ae_data')
-    #normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-    #                                 std=[0.229, 0.224, 0.225])
-    if aug_plus:
-        # MoCo v2's aug: similar to SimCLR https://arxiv.org/abs/2002.05709
-        augmentation = [
-            #transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
-            #transforms.RandomApply([
-            #    transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)  # not strengthened
-            #], p=0.8),
-            #transforms.RandomGrayscale(p=0.2),
-            #transforms.RandomApply([moco.loader.GaussianBlur([.1, 2.])], p=0.5),
-            #transforms.RandomHorizontalFlip(),
-            JitterCrop(outdim=crop_size,jitter_lim=jc_jit_limit),
-            transforms.RandomRotation((0,360)),
-            transforms.ToTensor(),
-            #normalize
-        ]
-    else:
-        # MoCo v1's aug: the same as InstDisc https://arxiv.org/abs/1805.01978
-        augmentation = [
-            transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize
-        ]
+  dataset = SDSSDataset(params.num_classes, files_pattern, transform, load_specz, True, params.specz_upper_lim)
+  sampler = DistributedSampler(dataset, shuffle=True) if distributed else None
+  dataloader = DataLoader(dataset,
+                          batch_size=int(params.batch_size) if is_train else int(params.valid_batch_size_per_gpu),
+                          num_workers=params.num_data_workers,
+                          shuffle=(sampler is None),
+                          sampler=sampler,
+                          drop_last=True,
+                          pin_memory=torch.cuda.is_available())
 
-    train_dataset = datasets.ImageFolder(
-        traindir,
-        moco.loader.TwoCropsTransform(transforms.Compose(augmentation)))
-
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    else:
-        train_sampler = None
-
-    return train_dataset, train_sampler
+  return dataloader, sampler
 
 class SDSSDataset(Dataset):
   def __init__(self, num_classes, files_pattern, transform, load_specz, load_ebv, specz_upper_lim=None):

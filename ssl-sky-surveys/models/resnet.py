@@ -223,9 +223,9 @@ class ResNet(nn.Module):
 
 def _resnet(arch, block, layers, pretrained, progress, **kwargs):
     model = ResNet(block, layers, **kwargs)
-    dim_mlp = model.fc.weight.shape[1]
-    #commented in to match moco 2 layer MLP projection head
-    model.fc = nn.Sequential(nn.Linear(dim_mlp, dim_mlp), nn.ReLU(), model.fc)
+    #dim_mlp = model.fc.weight.shape[1]
+    #added in to match moco 2 layer MLP projection head
+    #model.fc = nn.Sequential(nn.Linear(dim_mlp, dim_mlp), nn.ReLU(), model.fc)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)

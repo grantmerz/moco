@@ -6,7 +6,7 @@ import torch
 import logging
 
 import models.resnet
-#from utils.YParams import YParams
+from utils.YParams import YParams
 from utils.data_loader import get_data_loader
 import torchvision.models as basemodels
 
@@ -47,6 +47,10 @@ def load_model_from_checkpoint(checkpoint_path, basenet=False, num_channels=3, n
 
   else:
     model = models.resnet.resnet50(num_channels=num_channels, num_classes=num_classes).to(device)
+    
+  if mlp:
+    dim_mlp = model.fc.weight.shape[1]
+    model.fc = nn.Sequential(nn.Linear(dim_mlp, dim_mlp), nn.ReLU(), model.fc)
 
   logging.info("Loading checkpoint %s"%checkpoint_path)
   restore_checkpoint(model, checkpoint_path,mlp)
@@ -74,7 +78,9 @@ def restore_checkpoint(model, checkpoint_path,mlp):
   #  logging.info("Printing a pretrained model without FC layers")
   #  model.fc = Identity()
 
-  if mlp==False:
+  #added in to match moco 2 layer MLP projection head
+
+  if not mlp:
     logging.info("Printing a pretrained model without FC layers")
     model.fc = Identity()
 
