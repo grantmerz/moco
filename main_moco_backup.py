@@ -25,18 +25,9 @@ import torchvision.models as models
 import moco.loader
 import moco.builder
 
-
-#import sys
-#sys.path.append('/home/g4merz/Galaxy_Query/moco/ssl-sky-surveys')
-
-from dataloader import get_data_loader
-
-import custom_models.resnet
-
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
-model_names.append('custom-resnet50')
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('data', metavar='DIR',
@@ -46,10 +37,6 @@ parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet50',
                     help='model architecture: ' +
                         ' | '.join(model_names) +
                         ' (default: resnet50)')
-parser.add_argument('-c', '--num_channels',default=3,type=int, help='number of channels of the input image')
-parser.add_argument('--jc_jit_limit', default=7,type=int, help='Limit of number of pixels to jitter in either direction')
-
-parser.add_argument('--crop_size', default=128,type=int, help='Final crop size')
 parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
                     help='number of data loading workers (default: 32)')
 parser.add_argument('--epochs', default=200, type=int, metavar='N',
@@ -95,8 +82,6 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
 parser.add_argument('--savepath', default='', type=str,
                     help='path to save checkpoints')
 
-parser.add_argument('--png_type', default='stiff',type=str,
-                    help='stiff or lupton image type for ImageFolder')
 
 
 # moco specific configs:
@@ -121,11 +106,6 @@ parser.add_argument('--cos', action='store_true',
 def main():
     args = parser.parse_args()
 
-    if not os.path.exists(args.savepath):
-        os.makedirs(args.savepath)
-
-
-    
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
@@ -181,17 +161,9 @@ def main_worker(gpu, ngpus_per_node, args):
                                 world_size=args.world_size, rank=args.rank)
     # create model
     print("=> creating model '{}'".format(args.arch))
-    
-    #model = moco.builder.MoCo(
-    #    models.__dict__[args.arch],
-    #    args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
-    
-    encoder = custom_models.resnet.resnet50
     model = moco.builder.MoCo(
-        encoder,
-        args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
-        
-    print(args.arch)
+        models.__dict__[args.arch],
+        args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
     print(model)
 
     if args.distributed:
@@ -250,7 +222,6 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
 
     # Data loading code
-    ''' 
     traindir = os.path.join(args.data, 'ae_data')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
@@ -263,8 +234,7 @@ def main_worker(gpu, ngpus_per_node, args):
             #], p=0.8),
             #transforms.RandomGrayscale(p=0.2),
             #transforms.RandomApply([moco.loader.GaussianBlur([.1, 2.])], p=0.5),
-            #transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation((0,360)),
+            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             #normalize
         ]
@@ -287,9 +257,6 @@ def main_worker(gpu, ngpus_per_node, args):
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     else:
         train_sampler = None
- 
-    '''
-    train_dataset, train_sampler = get_data_loader(args.data, args.png_type, args.aug_plus, args.crop_size, args.jc_jit_limit, args.distributed)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),

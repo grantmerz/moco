@@ -1,0 +1,1 @@
+python main_moco.py -a resnet50 --savepath /home/g4merz/logs/moco/  --lr 0.015 --batch-size 32 --mlp --moco-t 0.2 --aug-plus --cos --multiprocessing-distributed --dist-url 'tcp://localhost:10001' --world-size 1 --rank 0 --moco-t 0.1 --moco-k 512  /home/g4merz/data/DES_image_folder/~mcarras2/
