@@ -14,6 +14,15 @@ import moco.loader
 #import sys
 #sys.path.append('/home/g4merz/galaxyQuery/moco')
 
+
+#code to reporduce aggregate MAD for images
+#train_data = data.reshape(data.shape[0],228*228,3)
+#MAD = scipy.stats.median_abs_deviation(train_data,axis=1)
+#print(MAD.shape)
+#agMAD1 = scipy.stats.median_abs_deviation(MAD,axis=0)
+
+
+
 class RandomRotate:
   def __call__(self, image):
     # print("RR", image.shape, image.dtype)
@@ -43,13 +52,30 @@ class JitterCrop:
     #print(center_x-self.offset,center_x+self.offset)
     #print(crop.shape)
     return transforms.ToTensor()(crop)
+
+
+class AddGaussianNoise:
+    def __init__(self, mean, std):
+        self.std = std
+        self.mean = mean
+        
+    def __call__(self, image):
+        
+        gaus = torch.randn(image.size())
+        var = torch.tensor(self.std*np.random.uniform(1,3))
+        noiseim = image+ torch.einsum('bcd,b->bcd', gaus, var)
+        return noiseim.float()
+        
+    def __repr__(self):
+        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
+
   
 def get_data_loader(data, png_type, aug_plus, crop_size, jc_jit_limit, distributed):
 
 
 #    traindir = os.path.join(data, png_type)
     traindir = os.path.join(data, 'ae_data')
-
+    agMAD = np.array([0.00784314, 0.0117647,  0.01176471])
 
   #normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
     #                                 std=[0.229, 0.224, 0.225])
@@ -65,6 +91,7 @@ def get_data_loader(data, png_type, aug_plus, crop_size, jc_jit_limit, distribut
             #transforms.RandomHorizontalFlip(),
             JitterCrop(outdim=crop_size,jitter_lim=jc_jit_limit),
             transforms.RandomRotation((0,360)),
+            AddGaussianNoise(0,agMAD)
             #transforms.ToTensor(),
             #normalize
         ]
