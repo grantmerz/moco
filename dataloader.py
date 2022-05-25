@@ -10,6 +10,9 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 import os
 import moco.loader
+import glob
+
+from PIL import Image
 
 #import sys
 #sys.path.append('/home/g4merz/galaxyQuery/moco')
@@ -28,7 +31,7 @@ class RandomRotate:
     # print("RR", image.shape, image.dtype)
     return (skimage.transform.rotate(image, np.float32(360*np.random.rand(1)))).astype(np.float32)
 
-class JitterCrop:
+class JitterCropPNG:
   def __init__(self, outdim, jitter_lim=None):
     self.outdim = outdim
     self.jitter_lim = jitter_lim
@@ -53,6 +56,32 @@ class JitterCrop:
     #print(crop.shape)
     return transforms.ToTensor()(crop)
 
+class JitterCropFITS:
+    def __init__(self, outdim, jitter_lim=None):
+        self.outdim = outdim
+        self.jitter_lim = jitter_lim
+        self.offset = self.outdim//2
+
+    def __call__(self, image):
+        print(image.shape)
+        #print("JC", image.size)
+
+        image = torch.from_numpy(image)
+        #print(image.shape)
+        image = np.transpose(image, (1, 2, 0))
+
+        center_x = image.shape[0]//2
+        center_y = image.shape[1]//2
+        if self.jitter_lim:
+            center_x += int(np.random.randint(-self.jitter_lim, self.jitter_lim+1, 1))
+            center_y += int(np.random.randint(-self.jitter_lim, self.jitter_lim+1, 1))
+
+        crop=image[(center_x-self.offset):(center_x+self.offset), (center_y-self.offset):(center_y+self.offset)]
+        #print(center_x-self.offset,center_x+self.offset)
+        #print(crop.shape)
+        
+        #return crop
+        return torch.permute(crop, (2, 1, 0))
 
 class AddGaussianNoise:
     def __init__(self, mean, std):
@@ -69,32 +98,106 @@ class AddGaussianNoise:
     def __repr__(self):
         return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
 
+class DESPNGDataset(Dataset):
+    def __init__(self,path,transform,png_type):
+        pngpath = path+'*'+png_type+'.png'
+        self.image_paths = glob.glob(pngpath)  # Should contain a list of image paths of your desired class: e.g. ['./data/class0/img0.png', './data/class0/img1.png', ...]
+        self.transform = transform
+        
+    def __len__(self):
+        return len(self.image_paths)    
+     
+    
+    def pil_loader(self,impath):
+    # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
+        with open(impath, "rb") as f:
+            img = Image.open(f)
+            return img.convert("RGB")
+        
+
+    def __getitem__(self, idx):
+        imp=self.image_paths[idx]
+        image=self.pil_loader(imp)
+        
+        return self.transform(image), torch.tensor([0])
+
+
+
+class DESFITSDataset(Dataset):
+    def __init__(self, path, transform):
+        self.path = path
+        self.transform = transform
+        self._open_file()
+
+    def _open_file(self):
+        print('Loading Data')
+        self.file = h5py.File(self.path, 'r')
+
+    def __len__(self):
+        return len(file['obj_ids'])
+
+    def __getitem__(self, idx):
+        # we flip channel axis because all tranforms we use assume HWC input,
+        # last transform, ToTensor, reverts this operation
+        image = self.file['images'][idx]
+        label=0
+        
+        return self.transform(image), label
+
+
+
+
+
   
-def get_data_loader(data, png_type, aug_plus, crop_size, jc_jit_limit, distributed):
+def get_data_loader(data, png, png_type,aug_plus, crop_size, jc_jit_limit, distributed):
 
-
-#    traindir = os.path.join(data, png_type)
-    traindir = os.path.join(data, 'ae_data')
-    agMAD = np.array([0.00784314, 0.0117647,  0.01176471])
+    traindir = data
+#    traindir = os.path.join(data, 'ae_data')
 
   #normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
     #                                 std=[0.229, 0.224, 0.225])
     if aug_plus:
+        if png:
         # MoCo v2's aug: similar to SimCLR https://arxiv.org/abs/2002.05709
-        augmentation = [
-            #transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
-            #transforms.RandomApply([
-            #    transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)  # not strengthened
-            #], p=0.8),
-            #transforms.RandomGrayscale(p=0.2),
-            #transforms.RandomApply([moco.loader.GaussianBlur([.1, 2.])], p=0.5),
-            #transforms.RandomHorizontalFlip(),
-            JitterCrop(outdim=crop_size,jitter_lim=jc_jit_limit),
-            transforms.RandomRotation((0,360)),
-            AddGaussianNoise(0,agMAD)
-            #transforms.ToTensor(),
-            #normalize
-        ]
+            augmentation = [
+                #transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
+                #transforms.RandomApply([
+                #    transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)  # not strengthened
+                #], p=0.8),
+                #transforms.RandomGrayscale(p=0.2),
+                #transforms.RandomApply([moco.loader.GaussianBlur([.1, 2.])], p=0.5),
+                #transforms.RandomHorizontalFlip(),
+                JitterCropPNG(outdim=crop_size,jitter_lim=jc_jit_limit),
+                transforms.RandomRotation((0,360)),
+                #AddGaussianNoise(0,agMAD),
+                #transforms.ToTensor(),
+                #normalize
+            ]
+            
+            train_dataset = DESPNGDataset(
+            traindir,
+            moco.loader.TwoCropsTransform(transforms.Compose(augmentation)),png_type)
+        
+        else:
+            augmentation = [
+                #transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
+                #transforms.RandomApply([
+                #    transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)  # not strengthened
+                #], p=0.8),
+                #transforms.RandomGrayscale(p=0.2),
+                #transforms.RandomApply([moco.loader.GaussianBlur([.1, 2.])], p=0.5),
+                #transforms.RandomHorizontalFlip(),
+                JitterCropFITS(outdim=crop_size,jitter_lim=jc_jit_limit),
+                transforms.RandomRotation((0,360)),
+                AddGaussianNoise(0,agMAD),
+                #transforms.ToTensor(),
+                #normalize
+            ]
+            
+            train_dataset = DESDataset(
+            traindir,
+            moco.loader.TwoCropsTransform(transforms.Compose(augmentation)))
+        
     else:
         # MoCo v1's aug: the same as InstDisc https://arxiv.org/abs/1805.01978
         augmentation = [
@@ -106,9 +209,6 @@ def get_data_loader(data, png_type, aug_plus, crop_size, jc_jit_limit, distribut
             normalize
         ]
 
-    train_dataset = datasets.ImageFolder(
-        traindir,
-        moco.loader.TwoCropsTransform(transforms.Compose(augmentation)))
 
     if distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)

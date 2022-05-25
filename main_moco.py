@@ -32,6 +32,7 @@ import moco.builder
 from dataloader import get_data_loader
 
 import custom_models.resnet
+import custom_models.decoder
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -95,7 +96,11 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
 parser.add_argument('--savepath', default='', type=str,
                     help='path to save checkpoints')
 
-parser.add_argument('--png_type', default='stiff',type=str,
+parser.add_argument('--png', default=True,type=bool,
+                    help='data is in png format or not')
+
+
+parser.add_argument('--png-type', default='stiff',type=str,
                     help='stiff or lupton image type for ImageFolder')
 
 
@@ -187,8 +192,9 @@ def main_worker(gpu, ngpus_per_node, args):
     #    args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
     
     encoder = custom_models.resnet.resnet50
+    decoder = custom_models.decoder.decoder
     model = moco.builder.MoCo(
-        encoder,
+        encoder, decoder,
         args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
         
     print(args.arch)
@@ -223,7 +229,8 @@ def main_worker(gpu, ngpus_per_node, args):
         raise NotImplementedError("Only DistributedDataParallel is supported.")
 
     # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
+    criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
+    criterion2 = nn.MSELoss().cuda(args.gpu)
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
@@ -289,7 +296,7 @@ def main_worker(gpu, ngpus_per_node, args):
         train_sampler = None
  
     '''
-    train_dataset, train_sampler = get_data_loader(args.data, args.png_type, args.aug_plus, args.crop_size, args.jc_jit_limit, args.distributed)
+    train_dataset, train_sampler = get_data_loader(args.data, args.png, args.png_type, args.aug_plus, args.crop_size, args.jc_jit_limit, args.distributed)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
@@ -301,7 +308,7 @@ def main_worker(gpu, ngpus_per_node, args):
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, args)
+        train(train_loader, model, criterion1, criterion2, optimizer, epoch, args)
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
@@ -313,7 +320,7 @@ def main_worker(gpu, ngpus_per_node, args):
             }, is_best=False, filename=args.savepath+'checkpoint_{:04d}.pth.tar'.format(epoch))
 
 
-def train(train_loader, model, criterion, optimizer, epoch, args):
+def train(train_loader, model, criterion1, criterion2, optimizer, epoch, args):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -337,8 +344,16 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
             images[1] = images[1].cuda(args.gpu, non_blocking=True)
 
         # compute output
-        output, target = model(im_q=images[0], im_k=images[1])
-        loss = criterion(output, target)
+        output, target, recon = model(im_q=images[0], im_k=images[1])
+        #output,target,recon = model(...)
+
+        #relabel to loss1
+        loss1 = criterion1(output, target)
+
+        loss2 = criterion2(images[0],recon)
+
+        loss = loss1 + 0.01*loss2
+
 
         # acc1/acc5 are (K+1)-way contrast classifier accuracy
         # measure accuracy and record loss
