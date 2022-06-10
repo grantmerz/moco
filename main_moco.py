@@ -194,7 +194,7 @@ def main_worker(gpu, ngpus_per_node, args):
     encoder = custom_models.resnet.resnet50
     decoder = custom_models.decoder.decoder
     model = moco.builder.MoCo(
-        encoder, decoder,
+        encoder, #decoder,
         args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
         
     print(args.arch)
@@ -230,7 +230,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # define loss function (criterion) and optimizer
     criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
-    criterion2 = nn.MSELoss().cuda(args.gpu)
+    #criterion2 = nn.BCELoss().cuda(args.gpu)
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
@@ -308,7 +308,7 @@ def main_worker(gpu, ngpus_per_node, args):
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
-        train(train_loader, model, criterion1, criterion2, optimizer, epoch, args)
+        train(train_loader, model, criterion1, optimizer, epoch, args)
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
@@ -320,7 +320,7 @@ def main_worker(gpu, ngpus_per_node, args):
             }, is_best=False, filename=args.savepath+'checkpoint_{:04d}.pth.tar'.format(epoch))
 
 
-def train(train_loader, model, criterion1, criterion2, optimizer, epoch, args):
+def train(train_loader, model, criterion1, optimizer, epoch, args):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -344,15 +344,15 @@ def train(train_loader, model, criterion1, criterion2, optimizer, epoch, args):
             images[1] = images[1].cuda(args.gpu, non_blocking=True)
 
         # compute output
-        output, target, recon = model(im_q=images[0], im_k=images[1])
+        output, target = model(im_q=images[0], im_k=images[1])
         #output,target,recon = model(...)
 
         #relabel to loss1
         loss1 = criterion1(output, target)
 
-        loss2 = criterion2(images[0],recon)
+        #loss2 = criterion2(images[0],recon)
 
-        loss = loss1 + 0.01*loss2
+        loss = loss1# + 0.01*loss2
 
 
         # acc1/acc5 are (K+1)-way contrast classifier accuracy
@@ -371,10 +371,11 @@ def train(train_loader, model, criterion1, criterion2, optimizer, epoch, args):
         batch_time.update(time.time() - end)
         end = time.time()
 
+        
         if i % args.print_freq == 0:
             progress.display(i)
 
-
+            
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:

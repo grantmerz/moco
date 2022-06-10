@@ -8,7 +8,7 @@ class MoCo(nn.Module):
     Build a MoCo model with: a query encoder, a key encoder, and a queue
     https://arxiv.org/abs/1911.05722
     """
-    def __init__(self, base_encoder, decoder, channels=3, dim=128, K=65536, m=0.999, T=0.07, mlp=False):
+    def __init__(self, base_encoder, channels=3, dim=128, K=65536, m=0.999, T=0.07, mlp=False):
         """
         dim: feature dimension (default: 128)
         K: queue size; number of negative keys (default: 65536)
@@ -31,7 +31,7 @@ class MoCo(nn.Module):
 
         
         #create the decoder
-        self.decoder = decoder(dim)
+        #self.decoder = decoder(dim)
         
 
         
@@ -136,7 +136,7 @@ class MoCo(nn.Module):
         q = self.encoder_q(im_q)  # queries: NxC
 
         #decode before moco stuff
-        recon = self.decoder(q)
+        #recon = self.decoder(q)
 
         q = nn.functional.normalize(q, dim=1)
 
@@ -173,7 +173,7 @@ class MoCo(nn.Module):
         self._dequeue_and_enqueue(k)
 
         
-        return logits, labels, recon
+        return logits, labels#, recon
 
 
 # utils
