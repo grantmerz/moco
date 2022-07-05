@@ -21,19 +21,18 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
-import numpy as np
 
 import moco.loader
-import moco.auto
-
-
+import moco.builder_dec
+import numpy as np
+import gc
 #import sys
 #sys.path.append('/home/g4merz/Galaxy_Query/moco/ssl-sky-surveys')
 
 from dataloader import get_data_loader
 
 import custom_models.resnet
-import custom_models.decoder
+import custom_models.decoder_simp as custom_dec
 import custom_models.encoder
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -121,19 +120,26 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
 parser.add_argument('--savepath', default='', type=str,
                     help='path to save checkpoints')
 
-parser.add_argument('--png', default=True,type=bool,
+parser.add_argument('--png', action='store_true',
                     help='data is in png format or not')
 
 
 parser.add_argument('--png-type', default='stiff',type=str,
                     help='stiff or lupton image type for ImageFolder')
 
+parser.add_argument('--nrangeup', default=1.0,type=float,
+                    help='data normalization range')
+
+parser.add_argument('--nrangelow', default=0.0, type=float,
+                    help='data normalization range')
+
 
 parser.add_argument('--alpha', default=1.0, type=float,
                     help='weighting factor on contrastive loss')
 parser.add_argument('--beta', default=1.0, type=float,
                     help='weighting factor on reconstruction loss')
-
+parser.add_argument('--scale', default=1.0, type=float,
+                    help='divide images by scale factor')
 
 
 # moco specific configs:
@@ -229,14 +235,15 @@ def main_worker(gpu, ngpus_per_node, args):
     
     #encoder = custom_models.resnet.resnet50
     encoder = custom_models.encoder.encoder
-    decoder = custom_models.decoder.decoder
-    model = moco.auto.MoCo(
+    decoder = custom_dec.decoder
+    model = moco.builder_dec.MoCo(
         encoder, decoder, outshape, 
-        args.num_channels,args.moco_dim, args.mlp)
-    
+        args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
+        
     print(args.arch)
     print(model)
 
+    print(args.png)
     
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
@@ -268,15 +275,14 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # define loss function (criterion) and optimizer
     #criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
-    #criterion1 = nn.MSELoss(reduction='sum').cuda(args.gpu)
-    criterion1 = nn.BCELoss().cuda(args.gpu)
+    #criterion2 = nn.MSELoss().cuda(args.gpu)
+    criterion1 = nn.MSELoss().cuda(args.gpu)
     
     #optimizer = torch.optim.SGD(model.parameters(), args.lr,
     #                            momentum=args.momentum,
     #                            weight_decay=args.weight_decay)
 
-
-    optimizer= torch.optim.Adam(model.parameters())
+    optimizer = torch.optim.Adam(model.parameters())
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -288,10 +294,12 @@ def main_worker(gpu, ngpus_per_node, args):
             else:
                 # Map model to be loaded to specified single gpu.
                 loc = 'cuda:{}'.format(args.gpu)
-                checkpoint = torch.load(args.resume, map_location=loc)
+                #checkpoint = torch.load(args.resume, map_location=loc)
+                checkpoint = torch.load(args.resume, map_location='cpu')
                 print('check')
             args.start_epoch = checkpoint['epoch']
             model.load_state_dict(checkpoint['state_dict'])
+            model=model.to(loc)
             #torch.cuda.empty_cache()
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
@@ -299,6 +307,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
             torch.cuda.empty_cache()
             del checkpoint
+            gc.collect()
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
@@ -347,7 +356,8 @@ def main_worker(gpu, ngpus_per_node, args):
         train_sampler = None
  
     '''
-    train_dataset, train_sampler = get_data_loader(args.data, args.png, args.png_type, args.aug_plus, args.crop_size, args.jc_jit_limit, args.distributed)
+    nrange =[args.nrangelow,args.nrangeup]
+    train_dataset, train_sampler = get_data_loader(args.data, args.scale, nrange, args.png, args.png_type, args.aug_plus, args.crop_size, args.jc_jit_limit, args.distributed)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
@@ -363,12 +373,13 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'arch': args.arch,
-                'state_dict': model.state_dict(),
-                'optimizer' : optimizer.state_dict(),
-            }, is_best=False, filename=args.savepath+'checkpoint_{:04d}.pth.tar'.format(epoch))
+            if epoch%10==0:
+                save_checkpoint({
+                    'epoch': epoch + 1,
+                    'arch': args.arch,
+                    'state_dict': model.state_dict(),
+                    'optimizer' : optimizer.state_dict(),
+                }, is_best=False, filename=args.savepath+'checkpoint_{:04d}.pth.tar'.format(epoch))
 
 
 def train(train_loader, model, criterion1, optimizer, epoch, args):
@@ -396,24 +407,24 @@ def train(train_loader, model, criterion1, optimizer, epoch, args):
 
         # compute output
 
-        recon = model(im_q=images[0], im_k=images[1])
+        output, target,recon = model(im_q=images[0], im_k=images[1])
         #output,target,recon = model(...)
 
         #relabel to loss1
-        loss = criterion1(recon, images[0])
+        #loss1 = criterion1(output, target)
 
 
-        #loss2 = criterion2(recon,images[0])
+        loss = criterion1(recon,images[0])
 
         #loss = args.alpha*loss1 + args.beta*loss2
 
 
         # acc1/acc5 are (K+1)-way contrast classifier accuracy
         # measure accuracy and record loss
-        #acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        acc1, acc5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), images[0].size(0))
-        #top1.update(acc1[0], images[0].size(0))
-        #top5.update(acc5[0], images[0].size(0))
+        top1.update(acc1[0], images[0].size(0))
+        top5.update(acc5[0], images[0].size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -427,9 +438,10 @@ def train(train_loader, model, criterion1, optimizer, epoch, args):
         
         if i % args.print_freq == 0:
             progress.display(i)
+            #print(loss1.item(),loss2.item())
 
-    np.save(args.savepath+'recon_images.npy', recon.detach().cpu().numpy())
 
+    #np.save(args.savepath+'recon_images.npy', recon.detach().cpu().numpy())
 
             
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):

@@ -17,7 +17,7 @@ class decoder(nn.Module):
         
         self.relu = nn.ReLU(inplace=True)
         #self.prelu = nn.PReLU()
-        self.sigmoid = nn.Sigmoid()
+        #self.sigmoid = nn.Sigmoid()
         self.fcd1 = nn.Linear(input_dim, np.prod(output_shape))
         
         #self.unflatten = nn.Unflatten(1,
@@ -41,6 +41,6 @@ class decoder(nn.Module):
         x = self.t_conv4(x)
         x = self.relu(x)
         x = self.t_conv5(x)
-        recon = self.sigmoid(x)
-        #recon = self.tanh(x)
+        recon = self.relu(x)
+        #recon = self.sigmoid(x)
         return recon

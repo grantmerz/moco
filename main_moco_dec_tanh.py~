@@ -32,7 +32,7 @@ import gc
 from dataloader import get_data_loader
 
 import custom_models.resnet
-import custom_models.decoder_prelu2 as custom_dec
+import custom_models.decoder_tanh as custom_dec
 import custom_models.encoder
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -137,8 +137,7 @@ parser.add_argument('--alpha', default=1.0, type=float,
                     help='weighting factor on contrastive loss')
 parser.add_argument('--beta', default=1.0, type=float,
                     help='weighting factor on reconstruction loss')
-parser.add_argument('--scale', default=1.0, type=float,
-                    help='divide images by scale factor')
+
 
 
 # moco specific configs:
@@ -274,8 +273,8 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # define loss function (criterion) and optimizer
     criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
-    criterion2 = nn.MSELoss().cuda(args.gpu)
-    #criterion2 = nn.BCELoss().cuda(args.gpu)
+    #criterion2 = nn.MSELoss().cuda(args.gpu)
+    criterion2 = nn.BCELoss().cuda(args.gpu)
     
     #optimizer = torch.optim.SGD(model.parameters(), args.lr,
     #                            momentum=args.momentum,
@@ -356,7 +355,7 @@ def main_worker(gpu, ngpus_per_node, args):
  
     '''
     nrange = [args.nrangelow,args.nrangeup]
-    train_dataset, train_sampler = get_data_loader(args.data, args.scale,nrange, args.png,
+    train_dataset, train_sampler = get_data_loader(args.data, nrange, args.png,
                                                    args.png_type, args.aug_plus, args.crop_size,
                                                    args.jc_jit_limit, args.distributed)
 

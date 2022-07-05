@@ -202,10 +202,46 @@ class DESFITSDataset(Dataset):
         return self.transform(image), label
 
 
-  
+
+class SDSSDataset(Dataset):
+    def __init__(self, path, frac_train, transform):
+        self.path = path
+        self.transform = transform
+        self.frac_train = frac_train
+        self._open_file()
+
+
+        
+    def _open_file(self):
+        
+        data = np.load(self.path, allow_pickle=True)
+        #n_gal = len(data["labels"])
+        #np.random.seed(random_state)
+        #indices = np.random.permutation(n_gal)
+        #ind_split_train = int(np.ceil(self.frac_train * n_gal))
+        ##ind_split_dev = ind_split_train + int(np.ceil(frac_dev * n_gal))
+        #images = data["cube"][indices[:ind_split_train]]
+        #del data
+        print(data.shape)
+        self.images = np.transpose(data,axes=(0,3,1,2))
+
+
+    def __len__(self):
+        size = len(self.images)
+        return size
+
+    def __getitem__(self, idx):
+        image = self.images[idx]
+        label=torch.tensor([0])
+
+        return self.transform(image), label
+
+
+      
 def get_data_loader(data, scale, nrange, png, png_type,aug_plus, crop_size, jc_jit_limit, distributed):
 
     traindir = data
+    frac_train = 0.01
     #traindir = os.path.join(data, 'ae_data')
 
     #agMAD = np.array([0.00784314, 0.0117647,  0.01176471])
@@ -248,18 +284,18 @@ def get_data_loader(data, scale, nrange, png, png_type,aug_plus, crop_size, jc_j
                 #Scale(scale),
                 RandomRotate(),
                 JitterCropFITS(outdim=crop_size,jitter_lim=jc_jit_limit),
-                #Normalize()
                 #Clip(),
-                #Shift(),
-                Scale(scale)
+                Shift(),
+                #Scale(scale)
+                #Normalize(),
                 #NormalizeRange(nrange)
                 ##AddGaussianNoise(0,agMAD),
                 #transforms.ToTensor(),
                 #normalize
             ]
             
-            train_dataset = DESFITSDataset(
-            traindir,
+            train_dataset = SDSSDataset(
+            traindir,frac_train,
             moco.loader.TwoCropsTransform(transforms.Compose(augmentation)))
         
     else:
@@ -281,6 +317,7 @@ def get_data_loader(data, scale, nrange, png, png_type,aug_plus, crop_size, jc_j
 
     return train_dataset, train_sampler
 
+'''
 class SDSSDataset(Dataset):
   def __init__(self, num_classes, files_pattern, transform, load_specz, load_ebv, specz_upper_lim=None):
     self.num_classes = num_classes
@@ -335,3 +372,4 @@ class SDSSDataset(Dataset):
       return self.transform(out), specz_bin, torch.tensor(specz)
     else:
       return self.transform(out)
+'''

@@ -32,7 +32,7 @@ import gc
 from dataloader import get_data_loader
 
 import custom_models.resnet
-import custom_models.decoder_prelu2 as custom_dec
+import custom_models.decoder_prelu as custom_dec
 import custom_models.encoder
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -73,10 +73,10 @@ parser.add_argument('-b', '--batch-size', default=256, type=int,
                          'batch size of all GPUs on the current node when '
                          'using Data Parallel or Distributed Data Parallel')
 
-parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
+parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
                     metavar='LR', help='initial learning rate', dest='lr')
 
-parser.add_argument('--schedule', default=[120, 160], nargs='*', type=int,
+parser.add_argument('--schedule', default=[30, 50], nargs='*', type=int,
                     help='learning rate schedule (when to drop lr by 10x)')
 
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -273,15 +273,15 @@ def main_worker(gpu, ngpus_per_node, args):
         raise NotImplementedError("Only DistributedDataParallel is supported.")
 
     # define loss function (criterion) and optimizer
-    criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
-    criterion2 = nn.MSELoss().cuda(args.gpu)
-    #criterion2 = nn.BCELoss().cuda(args.gpu)
+    #criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
+    #criterion2 = nn.MSELoss().cuda(args.gpu)
+    criterion1 = nn.MSELoss().cuda(args.gpu)
     
     #optimizer = torch.optim.SGD(model.parameters(), args.lr,
     #                            momentum=args.momentum,
     #                            weight_decay=args.weight_decay)
 
-    optimizer = torch.optim.AdamW(model.parameters())
+    optimizer = torch.optim.Adam(model.parameters(),args.lr)
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -356,7 +356,7 @@ def main_worker(gpu, ngpus_per_node, args):
  
     '''
     nrange = [args.nrangelow,args.nrangeup]
-    train_dataset, train_sampler = get_data_loader(args.data, args.scale,nrange, args.png,
+    train_dataset, train_sampler = get_data_loader(args.data, args.scale, nrange, args.png,
                                                    args.png_type, args.aug_plus, args.crop_size,
                                                    args.jc_jit_limit, args.distributed)
 
@@ -370,7 +370,7 @@ def main_worker(gpu, ngpus_per_node, args):
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
-        train(train_loader, model, criterion1, criterion2, optimizer, epoch, args)
+        train(train_loader, model, criterion1, optimizer, epoch, args)
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
@@ -382,7 +382,7 @@ def main_worker(gpu, ngpus_per_node, args):
             }, is_best=False, filename=args.savepath+'checkpoint_{:04d}.pth.tar'.format(epoch))
 
 
-def train(train_loader, model, criterion1, criterion2, optimizer, epoch, args):
+def train(train_loader, model, criterion1, optimizer, epoch, args):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -405,43 +405,13 @@ def train(train_loader, model, criterion1, criterion2, optimizer, epoch, args):
             images[0] = images[0].cuda(args.gpu, non_blocking=True)
             images[1] = images[1].cuda(args.gpu, non_blocking=True)
 
-        # compute output
-
-        output, target,recon = model(im_q=images[0], im_k=images[1])
-        #output,target,recon = model(...)
-
-        #relabel to loss1
-        loss1 = criterion1(output, target)
-
-
-        loss2 = criterion2(recon,images[0])
-
-        loss = args.alpha*loss1 + args.beta*loss2
-
-
-        # acc1/acc5 are (K+1)-way contrast classifier accuracy
-        # measure accuracy and record loss
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        losses.update(loss.item(), images[0].size(0))
-        top1.update(acc1[0], images[0].size(0))
-        top5.update(acc5[0], images[0].size(0))
-
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
         
         if i % args.print_freq == 0:
             progress.display(i)
-            print(loss1.item(),loss2.item())
+            #print(loss1.item(),loss2.item())
 
 
-    #np.save(args.savepath+'recon_images.npy', recon.detach().cpu().numpy())
+    np.save(args.savepath+'aug_images_'+str(epoch)+'.npy', images[0].detach().cpu().numpy())
 
             
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):

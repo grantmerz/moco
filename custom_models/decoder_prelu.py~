@@ -16,31 +16,31 @@ class decoder(nn.Module):
 
         
         self.relu = nn.ReLU(inplace=True)
-        #self.prelu = nn.PReLU()
-        self.sigmoid = nn.Sigmoid()
+        self.prelu = nn.PReLU()
+        #self.sigmoid = nn.Sigmoid()
         self.fcd1 = nn.Linear(input_dim, np.prod(output_shape))
         
         #self.unflatten = nn.Unflatten(1,
         #unflattened_size=(48, 32, 32))
         #self.identity=nn.Identity()
-        #self.tanh = nn.Tanh()
+        self.tanh = nn.Tanh()
         
         self.unflatten = nn.Unflatten(1,
         unflattened_size=output_shape)
 
     def forward(self, x):
         x = self.fcd1(x)
-        x = self.relu(x)
+        x = self.prelu(x)
         x = self.unflatten(x)
         x = self.t_conv1(x)
-        x = self.relu(x)
+        x = self.prelu(x)
         x = self.t_conv2(x)
-        x = self.relu(x)
+        x = self.prelu(x)
         x = self.t_conv3(x)
-        x = self.relu(x)
+        x = self.prelu(x)
         x = self.t_conv4(x)
-        x = self.relu(x)
+        x = self.prelu(x)
         x = self.t_conv5(x)
-        recon = self.sigmoid(x)
-        #recon = self.tanh(x)
+        #recon = self.sigmoid(x)
+        recon = self.tanh(x)
         return recon
