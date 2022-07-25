@@ -850,7 +850,7 @@ class CapsNet(nn.Module):
         self.num_classes = num_classes
         self.conv2d = nn.Conv2d(in_channels=self.num_channels, out_channels=128,
                                 kernel_size=3, stride=1, padding=1)
-        #self.batchNorm = torch.nn.BatchNorm2d(num_features=128, eps=1e-08, momentum=0.99)
+        self.batchNorm = torch.nn.BatchNorm2d(num_features=128, eps=1e-08, momentum=0.99)
         self.toCaps = ConvertToCaps()
         
         self.conv2dCaps1_nj_4_strd_2 = Conv2DCaps(h=128, w=128, ch_i=128, n_i=1, ch_j=32, n_j=4, kernel_size=3, stride=2, r_num=1)
@@ -882,7 +882,7 @@ class CapsNet(nn.Module):
     
     def forward(self, x, target=None):
         x = self.conv2d(x)
-        #x = self.batchNorm(x)
+        x = self.batchNorm(x)
         x = self.toCaps(x)
         
         x = self.conv2dCaps1_nj_4_strd_2(x)

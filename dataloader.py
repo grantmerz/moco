@@ -17,6 +17,7 @@ import h5py
 from astropy.visualization import MinMaxInterval
 
 import skimage.transform
+from skimage.transform import rescale, resize
 
 #import sys
 #sys.path.append('/home/g4merz/galaxyQuery/moco')
@@ -139,17 +140,44 @@ class Scale:
 
 class Shift:
     def __call__(self,image):
-        image = image-image.min()+1
+        #image = image-image.min()+1e-1
         image = np.log10(image)
         return image
 
 
 class Clip:
     def __call__(self,image):
-        image = np.maximum(0,image)
+        #image = np.maximum(0,image)
+        maskind = image<=0
+        image[maskind]=1e-1
         return image
 
+class BandCut:
+    def __init__(self,bands):
+        self.bandlist = {
+            "g": 0,
+            "r": 1,
+            "i": 2,
+            "z": 3,
+            "y": 4,
+        }
 
+        self.indices=[]
+
+        for b in bands:
+          ind = self.bandlist[b]
+          self.indices.append(ind)
+
+    def __call__(self,image):
+        imi = image[self.indices,:,:]
+        return imi
+
+
+class Resize:
+    def __call__(self,image):
+        image = np.transpose(image, (1, 2, 0))
+        image = resize(image,(64,64))
+        return np.transpose(image, (2, 0, 1))
 
       
 class DESPNGDataset(Dataset):
@@ -246,12 +274,14 @@ def get_data_loader(data, scale, nrange, png, png_type,aug_plus, crop_size, jc_j
                 #transforms.RandomGrayscale(p=0.2),
                 #transforms.RandomApply([moco.loader.GaussianBlur([.1, 2.])], p=0.5),
                 #Scale(scale),
+                #BandCut(['i']),
+                #Resize(),
                 RandomRotate(),
                 JitterCropFITS(outdim=crop_size,jitter_lim=jc_jit_limit),
                 #Normalize()
-                #Clip(),
-                #Shift(),
-                Scale(scale)
+                Clip(),
+                Shift(),
+                #Scale(scale)
                 #NormalizeRange(nrange)
                 ##AddGaussianNoise(0,agMAD),
                 #transforms.ToTensor(),

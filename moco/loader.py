@@ -15,6 +15,19 @@ class TwoCropsTransform:
         return [q, k]
 
 
+class TwoCropsTransformMask:
+    """Take two random crops of one image as the query and key and returns a weighting mask for pixels<=0."""
+
+    def __init__(self, base_transform):
+        self.base_transform = base_transform
+
+    def __call__(self, x):
+        q,m1 = self.base_transform(x)
+        k,m2 = self.base_transform(x)
+        return [q, k, m1]
+
+    
+
 class GaussianBlur(object):
     """Gaussian blur augmentation in SimCLR https://arxiv.org/abs/2002.05709"""
 

@@ -29,16 +29,17 @@ import gc
 #import sys
 #sys.path.append('/home/g4merz/Galaxy_Query/moco/ssl-sky-surveys')
 
-from dataloader2 import get_data_loader
+from dataloader1 import get_data_loader
 
 import custom_models.resnet
-import custom_models.decoder_prelu2 as custom_dec
-import custom_models.encoder
+import custom_models.resnet_orig
+import custom_models.decoder_prelu3 as custom_dec
+import custom_models.encoder1 as custom_enc
 
 from torch.utils.tensorboard import SummaryWriter
 
+import custom_models.deepcaps
 
-#import custom_models.deepcaps
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
@@ -237,15 +238,17 @@ def main_worker(gpu, ngpus_per_node, args):
 
     outshape=(args.num_channels,args.crop_size,args.crop_size)
     
-    #encoder = custom_models.resnet.resnet50
-    encoder = custom_models.encoder.encoder
-    #encoder = custom_models.deepcaps.CapsNet
+    #encoder = custom_models.resnet_orig.resnet50
+    #encoder = custom_enc.encoder
+    #encoder=models.__dict__[args.arch]
+
+    encoder = custom_models.deepcaps.CapsNet
     decoder = custom_dec.decoder
     model = moco.builder_dec.MoCo(
         encoder, decoder, outshape, 
         args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
         
-    print(args.arch)
+    #print(args.arch)
     print(model)
 
     print(args.png)
@@ -418,6 +421,9 @@ def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
             images[0] = images[0].cuda(args.gpu, non_blocking=True)
             images[1] = images[1].cuda(args.gpu, non_blocking=True)
 
+        #slice bands
+        
+        
         # compute output
 
         output, target,recon = model(im_q=images[0], im_k=images[1])
@@ -427,8 +433,9 @@ def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
         #loss = criterion1(output, target)
 
 
-        loss = criterion1(recon,images[0])
-
+        #loss = criterion1(recon,images[0])
+        #loss = criterion1(recon,images[0][:,:3,:])
+        
         #loss = args.alpha*loss1 + args.beta*loss2
 
 

@@ -33,6 +33,7 @@ class decoder(nn.Module):
             nn.Unflatten(1,unflattened_size=output_shape),
             nn.ConvTranspose2d(output_shape[0], 128, 3, stride=1,padding=1),
             nn.PReLU(),
+            nn.BatchNorm2d(128,momentum=0.99),
             nn.ConvTranspose2d(128, 64, 3, stride=1,padding=1),
             nn.PReLU(),
             nn.ConvTranspose2d(64, 32, 3, stride=1,padding=1),
@@ -40,9 +41,15 @@ class decoder(nn.Module):
             nn.ConvTranspose2d(32, 16, 3, stride=1,padding=1),
             nn.PReLU(),
             nn.ConvTranspose2d(16, output_shape[0], 3, stride=1,padding=1),
-            nn.Identity()
+            #nn.Identity()
             )
 
+        self.dec_model.apply(self.weight_init)
+
+    def weight_init(self,m):
+        if isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
+            nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
+            nn.init.zeros_(m.bias)
 
         
 

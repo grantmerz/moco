@@ -32,8 +32,8 @@ import gc
 from dataloader import get_data_loader
 
 import custom_models.resnet
-import custom_models.decoder_prelu2 as custom_dec
-import custom_models.encoder
+import custom_models.decoder_prelu3 as custom_dec
+import custom_models.encoder1 as custom_enc
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -81,7 +81,7 @@ parser.add_argument('-b', '--batch-size', default=256, type=int,
 parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
                     metavar='LR', help='initial learning rate', dest='lr')
 
-parser.add_argument('--schedule', default=[30, 50], nargs='*', type=int,
+parser.add_argument('--schedule', default=[70, 140], nargs='*', type=int,
                     help='learning rate schedule (when to drop lr by 10x)')
 
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -237,15 +237,15 @@ def main_worker(gpu, ngpus_per_node, args):
 
     outshape=(args.num_channels,args.crop_size,args.crop_size)
     
-    encoder = custom_models.resnet.resnet50
-    #encoder = custom_models.encoder.encoder
+    #encoder = custom_models.resnet.resnet50
+    encoder = custom_enc.encoder
     #encoder = custom_models.deepcaps.CapsNet
     decoder = custom_dec.decoder
     model = moco.builder_dec.MoCo(
         encoder, decoder, outshape, 
         args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
         
-    print(args.arch)
+    #print(args.arch)
     print(model)
 
     print(args.png)
@@ -287,7 +287,7 @@ def main_worker(gpu, ngpus_per_node, args):
     #                            momentum=args.momentum,
     #                            weight_decay=args.weight_decay)
 
-    optimizer = torch.optim.Adam(model.parameters(),args.lr)
+    optimizer = torch.optim.AdamW(model.parameters(),args.lr)
 
     # optionally resume from a checkpoint
     if args.resume:

@@ -1,1 +1,0 @@
-python main_moco.py -a resnet50 --lr 0.015 --batch-size 128 --mlp --moco-t 0.2 --aug-plus --cos --multiprocessing-distributed --dist-url 'tcp://localhost:10001' --world-size 1 --rank 0 /home/shared/imagenet/raw/

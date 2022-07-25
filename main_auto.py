@@ -32,8 +32,14 @@ import gc
 from dataloader import get_data_loader
 
 import custom_models.resnet
-import custom_models.decoder
-import custom_models.encoder
+import custom_models.resnet_orig
+import custom_models.decoder_prelu4 as custom_dec
+import custom_models.encoder3 as custom_enc
+
+from torch.utils.tensorboard import SummaryWriter
+
+import custom_models.deepcaps
+
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
@@ -56,7 +62,7 @@ parser.add_argument('-c', '--num_channels',default=3,type=int, help='number of c
 parser.add_argument('--jc_jit_limit', default=7,type=int,
                     help='Limit of number of pixels to jitter in either direction')
 
-parser.add_argument('--crop_size', default=128,type=int, help='Final crop size')
+parser.add_argument('--crop-size', default=128,type=int, help='Final crop size')
 
 parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
                     help='number of data loading workers (default: 32)')
@@ -73,10 +79,10 @@ parser.add_argument('-b', '--batch-size', default=256, type=int,
                          'batch size of all GPUs on the current node when '
                          'using Data Parallel or Distributed Data Parallel')
 
-parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
+parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
                     metavar='LR', help='initial learning rate', dest='lr')
 
-parser.add_argument('--schedule', default=[120, 160], nargs='*', type=int,
+parser.add_argument('--schedule', default=[70, 140], nargs='*', type=int,
                     help='learning rate schedule (when to drop lr by 10x)')
 
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -132,7 +138,6 @@ parser.add_argument('--nrangeup', default=1.0,type=float,
 
 parser.add_argument('--nrangelow', default=0.0, type=float,
                     help='data normalization range')
-
 
 parser.add_argument('--alpha', default=1.0, type=float,
                     help='weighting factor on contrastive loss')
@@ -233,14 +238,17 @@ def main_worker(gpu, ngpus_per_node, args):
 
     outshape=(args.num_channels,args.crop_size,args.crop_size)
     
-    encoder = custom_models.resnet.resnet50
-    #encoder = custom_models.encoder.encoder
-    decoder = custom_models.decoder.decoder
+    encoder = custom_models.resnet_orig.resnet50
+    #encoder = custom_enc.encoder
+    #encoder=models.__dict__[args.arch]
+    #encoder = custom_models.deepcaps.CapsNet
+
+    decoder = custom_dec.decoder
     model = moco.builder_dec.MoCo(
         encoder, decoder, outshape, 
         args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
         
-    print(args.arch)
+    #print(args.arch)
     print(model)
 
     print(args.png)
@@ -282,7 +290,7 @@ def main_worker(gpu, ngpus_per_node, args):
     #                            momentum=args.momentum,
     #                            weight_decay=args.weight_decay)
 
-    optimizer = torch.optim.AdamW(model.parameters())
+    optimizer = torch.optim.Adam(model.parameters(),args.lr)
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -356,12 +364,16 @@ def main_worker(gpu, ngpus_per_node, args):
         train_sampler = None
  
     '''
-    nrange =[args.nrangelow,args.nrangeup]
-    train_dataset, train_sampler = get_data_loader(args.data, args.scale, nrange, args.png, args.png_type, args.aug_plus, args.crop_size, args.jc_jit_limit, args.distributed)
+    nrange = [args.nrangelow,args.nrangeup]
+    train_dataset, train_sampler = get_data_loader(args.data, args.scale, nrange, args.png,
+                                                   args.png_type, args.aug_plus, args.crop_size,
+                                                   args.jc_jit_limit, args.distributed)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler, drop_last=True)
+
+    tb= SummaryWriter(log_dir='/home/g4merz/logs/moco/DR2/tb/'+args.savepath)
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -369,19 +381,24 @@ def main_worker(gpu, ngpus_per_node, args):
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
-        train(train_loader, model, criterion1, optimizer, epoch, args)
+        train(train_loader, model, criterion1, optimizer, epoch, args,tb)
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'arch': args.arch,
-                'state_dict': model.state_dict(),
-                'optimizer' : optimizer.state_dict(),
-            }, is_best=False, filename=args.savepath+'checkpoint_{:04d}.pth.tar'.format(epoch))
+            if epoch%10==0:
+                save_checkpoint({
+                    'epoch': epoch + 1,
+                    'arch': args.arch,
+                    'state_dict': model.state_dict(),
+                    'optimizer' : optimizer.state_dict(),
+                }, is_best=False, filename=args.savepath+'checkpoint_{:04d}.pth.tar'.format(epoch))
+
+    tb.close()
 
 
-def train(train_loader, model, criterion1, optimizer, epoch, args):
+
+    
+def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -403,17 +420,22 @@ def train(train_loader, model, criterion1, optimizer, epoch, args):
         if args.gpu is not None:
             images[0] = images[0].cuda(args.gpu, non_blocking=True)
             images[1] = images[1].cuda(args.gpu, non_blocking=True)
-
+            #full = images[0][:,:3,:].contiguous().cuda(args.gpu, non_blocking=True)
+            #feedin = images[0][:,:2,:].contiguous().cuda(args.gpu,non_blocking=True)
+            #feedink = images[1][:,:2,:].contiguous().cuda(args.gpu,non_blocking=True)
+            
         # compute output
 
         output, target,recon = model(im_q=images[0], im_k=images[1])
         #output,target,recon = model(...)
 
         #relabel to loss1
-        #loss1 = criterion1(output, target)
+        #loss = criterion1(output, target)
 
 
         loss = criterion1(recon,images[0])
+        
+        #loss = criterion1(recon,full)
 
         #loss = args.alpha*loss1 + args.beta*loss2
 
@@ -425,6 +447,10 @@ def train(train_loader, model, criterion1, optimizer, epoch, args):
         top1.update(acc1[0], images[0].size(0))
         top5.update(acc5[0], images[0].size(0))
 
+        #losses.update(loss.item(), full.size(0))
+        #top1.update(acc1[0], full.size(0))
+        #top5.update(acc5[0], full.size(0))
+        
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
@@ -440,9 +466,9 @@ def train(train_loader, model, criterion1, optimizer, epoch, args):
             #print(loss1.item(),loss2.item())
 
 
-    np.save(args.savepath+'recon_images.npy', recon.detach().cpu().numpy())
-
-            
+    #np.save(args.savepath+'recon_images.npy', recon.detach().cpu().numpy())
+    tb.add_scalar("Loss", losses.avg, epoch)
+    
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
@@ -495,9 +521,10 @@ def adjust_learning_rate(optimizer, epoch, args):
     lr = args.lr
     if args.cos:  # cosine lr schedule
         lr *= 0.5 * (1. + math.cos(math.pi * epoch / args.epochs))
-    else:  # stepwise lr schedule
+    else:  # stepwise lr schedule change to power law
         for milestone in args.schedule:
             lr *= 0.1 if epoch >= milestone else 1.
+        #lr*=0.95**(epoch)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 

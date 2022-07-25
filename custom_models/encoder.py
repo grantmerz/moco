@@ -15,7 +15,7 @@ class encoder(nn.Module):
             nn.Conv2d(64, 128, 3, stride=1,padding=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(128*32*32, 1024),
+            nn.Linear(128*32*32,1024),
             nn.ReLU(),
             nn.Linear(1024,num_classes),
             nn.ReLU()

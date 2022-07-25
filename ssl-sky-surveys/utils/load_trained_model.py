@@ -10,6 +10,10 @@ import models.resnet
 #from utils.YParams import YParams
 from utils.data_loader import get_data_loader
 import torchvision.models as basemodels
+import sys
+sys.path.append('/home/g4merz/Galaxy_Query/moco/custom_models/')
+import decoder_prelu4
+import encoder4_squash
 
 def load_experiment(yaml_config_file='./config/photoz.yaml', config='default', load_best_ckpt=True, device="cpu"):
   params = YParams(yaml_config_file, config)
@@ -47,7 +51,7 @@ def load_model_from_checkpoint(checkpoint_path, basenet=False, num_channels=3, n
     model = basemodels.resnet50()#.to(device)
 
   else:
-    model = models.resnet.resnet50(num_channels=num_channels, num_classes=num_classes)#.to(device)
+    model = encoder4_squash.encoder(num_channels=num_channels, num_classes=num_classes)#.to(device)
     
   if mlp:
     dim_mlp = model.fc.weight.shape[1]

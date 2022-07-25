@@ -1,6 +1,8 @@
 import torch.nn as nn
 import torch
 import numpy as np
+import torchvision.transforms as transforms
+
 class decoder(nn.Module):
     def __init__(self, input_dim, output_shape):
         super().__init__()
@@ -17,18 +19,23 @@ class decoder(nn.Module):
         
         
         self.dec_model=nn.Sequential(
-            nn.Linear(input_dim,1024),
+            nn.Linear(input_dim,512),
+            nn.PReLU(),
+            nn.Linear(512,1024),
             nn.PReLU(),
             nn.Linear(1024,128*32*32),
             nn.PReLU(),
             nn.Unflatten(1,unflattened_size=(128,32,32)),
             nn.ConvTranspose2d(128, 64, 3, stride=1,padding=1),
             nn.PReLU(),
+            nn.BatchNorm2d(64,momentum=0.99),
             nn.ConvTranspose2d(64, 32, 3, stride=1,padding=1),
             nn.PReLU(),
-            nn.ConvTranspose2d(32, 16, 3, stride=2,padding=1,output_padding=1),
+            transforms.Resize(64,interpolation=0),
+            nn.ConvTranspose2d(32, 16, 3, stride=1,padding=1),
             nn.PReLU(),
-            nn.ConvTranspose2d(16, 8, 3, stride=2,padding=1,output_padding=1),
+            transforms.Resize(128,interpolation=0),
+            nn.ConvTranspose2d(16, 8, 3, stride=1,padding=1),
             nn.PReLU(),
             nn.ConvTranspose2d(8, output_shape[0], 3, stride=1,padding=1),
             
