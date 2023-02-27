@@ -4,9 +4,7 @@
 In addition to the MoCo framework, I implemented a decoder network to recover images from the latent space.  With this architecture, one can create a latent space that is robust to various augmentations (thanks to MoCo) and contains information that lets the decoder network recover the original image.  I used this network on DES galaxy thumbnails available publicly (https://des.ncsa.illinois.edu/desaccess/docs/apps.html)
 
 Here's a sample of the DES galaxies that the network was trained on
-<p align="center">
-  <img src="https://github.com/grantmerz/moco/blob/main/raw_recon_comp_128.png" width="500">
-</p>
+
 
 If we train an autoencoder network, we can generate a latent space in which each galaxy image can be represented. This latent space contains a bunch of information about the original image.  It's the decoder network's job to use this latent space to reconstruct the information.  In theory, we want the latent space to be robust against various augmentations.  For instance, a flipped image should pretty much have the same latent space values as its unflipped original. In other words, a flipped image should be the most similar to its unflipped original.  We can measure similarity by computing the distance between latent space values of each galaxy pair and finding the galaxy with the smallest distance.  First, we can look at a baseline convolutional autoencoder without MoCo.  After training, we compute latent space vectors and similarities.
 <p align="center">
@@ -21,6 +19,11 @@ This shows how similar the flipped galaxies are compared to their original count
 
 Every flipped galaxy is correctly recgonized as being the most similar to its original version!  Our latent space is robust to spatial rotations!  We could employ more augmentations to tailor how we want our latent space to be robust.
 
+
+We can also check the decoder to see if we can recover information back to the pixel space.  It turns out that the best setup involves a downweighting of the reconstruction loss at regions of empty space. This acts as a regularizer in order to recover information across a variety of images. For terrestrial datasets with little empty space, this might not be needed.  Or you could pick certain regions to mask so the network prioritizes different parts of an image
+<p align="center">
+  <img src="https://github.com/grantmerz/moco/blob/main/raw_recon_comp_128.png" width="500">
+</p>
 
 ## MoCo: Momentum Contrast for Unsupervised Visual Representation Learning
 
