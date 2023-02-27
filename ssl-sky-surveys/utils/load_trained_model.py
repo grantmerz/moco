@@ -93,9 +93,58 @@ def restore_checkpoint(model, checkpoint_path,mlp):
 
   logging.info("Chekpoint loaded. Checkpoint epoch %d"%checkpoint['epoch'])
 
+
+
+
+
+def load_decoder_from_checkpoint(checkpoint_path, num_classes, shape, device="cpu"):
+  model = decoder_prelu4.decoder(num_classes,shape).to(device)
+
+  logging.info("Loading checkpoint %s"%checkpoint_path)
+  restore_decoder_checkpoint(model, checkpoint_path)
+
+  return model
+
+
+def restore_decoder_checkpoint(model, checkpoint_path):
+  checkpoint = torch.load(checkpoint_path, map_location='cpu')
+
+  # some checkpoints have a different name for the model key
+  model_key = 'model_state' if 'model_state' in checkpoint else 'state_dict'
+
+  new_model_state = OrderedDict()
+  for key in checkpoint[model_key].keys():
+    if 'decoder' in key:
+      name = str(key).replace('module.decoder.', '')
+      new_model_state[name] = checkpoint[model_key][key]
+    elif 'module.' in key:
+      name = str(key).replace('module.', '')
+      new_model_state[name] = checkpoint[model_key][key]
+
+  msg = model.load_state_dict(new_model_state, strict=False)
+  #if msg.missing_keys == ['fc.weight', 'fc.bias']:
+  #  logging.info("Printing a pretrained model without FC layers")
+  #  model.fc = Identity()
+
+  #added in to match moco 2 layer MLP projection head
+
+  logging.info("Chekpoint loaded. Checkpoint epoch %d"%checkpoint['epoch'])
+
+
+
+
+
+
+
+
 class Identity(torch.nn.Module):
   def __init__(self):
     super(Identity, self).__init__()
 
   def forward(self, x):
     return x
+
+
+
+
+

@@ -31,7 +31,7 @@ import gc
 #import sys
 #sys.path.append('/home/g4merz/Galaxy_Query/moco/ssl-sky-surveys')
 
-from dataloader_mask import get_data_loader
+from dataloader_mask2 import get_data_loader
 
 import custom_models.resnet
 import custom_models.resnet_orig
@@ -238,15 +238,16 @@ def main_worker(gpu, ngpus_per_node, args):
     #    models.__dict__[args.arch],
     #    args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
 
-    outshape=(args.num_channels,args.crop_size,args.crop_size)
-    
+    #outshape=(args.num_channels,args.crop_size,args.crop_size)
+    outshape=(3,args.crop_size,args.crop_size)
     #encoder = custom_models.resnet_orig.resnet50
     encoder = custom_enc.encoder
     #encoder=models.__dict__[args.arch]
     #encoder = custom_models.deepcaps.CapsNet
 
     decoder = custom_dec.decoder
-    model = moco.builder_auto.MoCo(
+
+    model = moco.builder_dec.MoCo(
         encoder, decoder, outshape, 
         args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
         
@@ -284,9 +285,9 @@ def main_worker(gpu, ngpus_per_node, args):
         raise NotImplementedError("Only DistributedDataParallel is supported.")
 
     # define loss function (criterion) and optimizer
-    #criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
-    #criterion2 = nn.MSELoss().cuda(args.gpu)
-    criterion1 = nn.MSELoss().cuda(args.gpu)
+    criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
+    criterion2 = nn.MSELoss().cuda(args.gpu)
+    #criterion1 = nn.MSELoss().cuda(args.gpu)
     
     #optimizer = torch.optim.SGD(model.parameters(), args.lr,
     #                            momentum=args.momentum,
@@ -383,7 +384,7 @@ def main_worker(gpu, ngpus_per_node, args):
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
-        train(train_loader, model, criterion1, optimizer, epoch, args,tb)
+        train(train_loader, model, criterion1, criterion2, optimizer, epoch, args,tb)
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
@@ -402,7 +403,7 @@ def mask_l2_loss(output, target,mask):
     return loss
 
     
-def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
+def train(train_loader, model, criterion1, criterion2, optimizer, epoch, args,tb):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -422,35 +423,36 @@ def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
         data_time.update(time.time() - end)
 
         if args.gpu is not None:
-            images[0] = images[0].cuda(args.gpu, non_blocking=True)
-            images[2] = images[2].cuda(args.gpu, non_blocking=True)
+            #images[0] = images[0].cuda(args.gpu, non_blocking=True)
+            #images[2] = images[2].cuda(args.gpu, non_blocking=True)
             #images[1] = images[1].cuda(args.gpu, non_blocking=True)
-            #full = images[0][:,:3,:].contiguous().cuda(args.gpu, non_blocking=True)
-            #feedin = images[0][:,:2,:].contiguous().cuda(args.gpu,non_blocking=True)
-            #feedink = images[1][:,:2,:].contiguous().cuda(args.gpu,non_blocking=True)
-            
+            full = images[0][:,:3,:].contiguous().cuda(args.gpu, non_blocking=True)
+            #iband = images[0][:,2,:].contiguous().cuda(args.gpu, non_blocking=True)
+            feedin = images[0][:,:2,:].contiguous().cuda(args.gpu,non_blocking=True)
+            feedink = images[1][:,:2,:].contiguous().cuda(args.gpu,non_blocking=True)
+            mask = images[2][:,:3,:].contiguous().cuda(args.gpu, non_blocking=True)
         # compute output
 
-        recon = model(im_q=images[0])
+        output, target, recon = model(im_q=feedin, im_k=feedink)
         #output,target,recon = model(...)
 
         #relabel to loss1
-        #loss = criterion1(output, target)
+        loss1 = criterion1(output, target)
 
         #loss = criterion1(recon,images[0])
-        loss = mask_l2_loss(recon,images[0],images[2])
+        loss2 = mask_l2_loss(recon,full,mask)
         
         #loss = criterion1(recon,full)
 
-        #loss = args.alpha*loss1 + args.beta*loss2
+        loss = args.alpha*loss1 + args.beta*loss2
 
 
         # acc1/acc5 are (K+1)-way contrast classifier accuracy
         # measure accuracy and record loss
-        #acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        acc1, acc5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), images[0].size(0))
-        #top1.update(acc1[0], images[0].size(0))
-        #top5.update(acc5[0], images[0].size(0))
+        top1.update(acc1[0], images[0].size(0))
+        top5.update(acc5[0], images[0].size(0))
 
         #losses.update(loss.item(), full.size(0))
         #top1.update(acc1[0], full.size(0))
@@ -468,7 +470,7 @@ def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
         
         if i % args.print_freq == 0:
             progress.display(i)
-            #print(loss1.item(),loss2.item())
+            print(loss1.item(),loss2.item())
 
 
     np.save(args.savepath+'recon_images.npy', recon.detach().cpu().numpy())

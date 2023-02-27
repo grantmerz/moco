@@ -21,6 +21,8 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
+from sklearn.model_selection import train_test_split
+from torch.utils.data import TensorDataset
 
 import moco.loader
 import moco.builder_dec
@@ -31,9 +33,9 @@ import gc
 #import sys
 #sys.path.append('/home/g4merz/Galaxy_Query/moco/ssl-sky-surveys')
 
-from dataloader_mask1 import get_data_loader
+from dataloader_mask2 import get_data_loader
 
-import custom_models.resnet
+import custom_models.phot_lat_map2 as custom_map
 import custom_models.resnet_orig
 import custom_models.decoder_prelu4 as custom_dec
 import custom_models.encoder4_squash as custom_enc
@@ -53,18 +55,15 @@ parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('data', metavar='DIR',
                     help='path to dataset')
 
-parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet50',
-                    choices=model_names,
-                    help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: resnet50)')
+parser.add_argument('--labels', metavar='DIR',
+                    help='path to labels')
 
-parser.add_argument('-c', '--num_channels',default=3,type=int, help='number of channels of the input image')
 
-parser.add_argument('--jc_jit_limit', default=7,type=int,
-                    help='Limit of number of pixels to jitter in either direction')
+parser.add_argument('--input-dim', default=25, type=int, metavar='N',
+                    help='input number of features')
 
-parser.add_argument('--crop-size', default=128,type=int, help='Final crop size')
+parser.add_argument('--output_dim', default=128, type=int, metavar='N',
+                    help='output number of features')
 
 parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
                     help='number of data loading workers (default: 32)')
@@ -86,6 +85,10 @@ parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
 
 parser.add_argument('--schedule', default=[50, 150, 250], nargs='*', type=int,
                     help='learning rate schedule (when to drop lr by 10x)')
+
+parser.add_argument('--cos', action='store_true',
+                    help='use cosine lr schedule')
+
 
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum of SGD solver')
@@ -119,6 +122,8 @@ parser.add_argument('--seed', default=None, type=int,
 parser.add_argument('--gpu', default=None, type=int,
                     help='GPU id to use.')
 
+                    
+
 parser.add_argument('--multiprocessing-distributed', action='store_true',
                     help='Use multi-processing distributed training to launch '
                          'N processes per node, which has N GPUs. This is the '
@@ -128,44 +133,6 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
 parser.add_argument('--savepath', default='', type=str,
                     help='path to save checkpoints')
 
-parser.add_argument('--png', action='store_true',
-                    help='data is in png format or not')
-
-
-parser.add_argument('--png-type', default='stiff',type=str,
-                    help='stiff or lupton image type for ImageFolder')
-
-parser.add_argument('--nrangeup', default=1.0,type=float,
-                    help='data normalization range')
-
-parser.add_argument('--nrangelow', default=0.0, type=float,
-                    help='data normalization range')
-
-parser.add_argument('--alpha', default=1.0, type=float,
-                    help='weighting factor on contrastive loss')
-parser.add_argument('--beta', default=1.0, type=float,
-                    help='weighting factor on reconstruction loss')
-parser.add_argument('--scale', default=1.0, type=float,
-                    help='divide images by scale factor')
-
-
-# moco specific configs:
-parser.add_argument('--moco-dim', default=128, type=int,
-                    help='feature dimension (default: 128)')
-parser.add_argument('--moco-k', default=65536, type=int,
-                    help='queue size; number of negative keys (default: 65536)')
-parser.add_argument('--moco-m', default=0.999, type=float,
-                    help='moco momentum of updating key encoder (default: 0.999)')
-parser.add_argument('--moco-t', default=0.07, type=float,
-                    help='softmax temperature (default: 0.07)')
-
-# options for moco v2
-parser.add_argument('--mlp', action='store_true',
-                    help='use mlp head')
-parser.add_argument('--aug-plus', action='store_true',
-                    help='use moco v2 data augmentation')
-parser.add_argument('--cos', action='store_true',
-                    help='use cosine lr schedule')
 
 
 
@@ -175,9 +142,7 @@ def main():
 
     if not os.path.exists(args.savepath):
         os.makedirs(args.savepath)
-
-
-    
+  
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
@@ -232,28 +197,14 @@ def main_worker(gpu, ngpus_per_node, args):
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
     # create model
-    print("=> creating model '{}'".format(args.arch))
-    
-    #model = moco.builder.MoCo(
-    #    models.__dict__[args.arch],
-    #    args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
+    print("=> creating model ")
 
-    outshape=(args.num_channels,args.crop_size,args.crop_size)
-    
-    #encoder = custom_models.resnet_orig.resnet50
-    encoder = custom_enc.encoder
-    #encoder=models.__dict__[args.arch]
-    #encoder = custom_models.deepcaps.CapsNet
-
-    decoder = custom_dec.decoder
-    model = moco.builder_auto.MoCo(
-        encoder, decoder, outshape, 
-        args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
+    print(args.input_dim, args.output_dim)
+    model = custom_map.Model(args.input_dim, args.output_dim)  
         
-    #print(args.arch)
+
     print(model)
 
-    print(args.png)
     
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
@@ -284,9 +235,8 @@ def main_worker(gpu, ngpus_per_node, args):
         raise NotImplementedError("Only DistributedDataParallel is supported.")
 
     # define loss function (criterion) and optimizer
-    #criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
-    #criterion2 = nn.MSELoss().cuda(args.gpu)
-    criterion1 = nn.MSELoss().cuda(args.gpu)
+    criterion = nn.MSELoss().cuda(args.gpu)
+    #criterion1 = nn.MSELoss().cuda(args.gpu)
     
     #optimizer = torch.optim.SGD(model.parameters(), args.lr,
     #                            momentum=args.momentum,
@@ -366,16 +316,32 @@ def main_worker(gpu, ngpus_per_node, args):
         train_sampler = None
  
     '''
-    nrange = [args.nrangelow,args.nrangeup]
-    train_dataset, train_sampler = get_data_loader(args.data, args.scale, nrange, args.png,
-                                                   args.png_type, args.aug_plus, args.crop_size,
-                                                   args.jc_jit_limit, args.distributed)
+    photinfo = np.loadtxt(args.data)
+    #photinfo = np.asarray(photinfo)
+    encoded = np.load(args.labels)
+
+    #X_train, X_test, y_train, y_test = train_test_split(photinfo, encoded, test_size=0.2)
+    
+    photinfo = torch.Tensor(photinfo)    
+    encoded = torch.Tensor(encoded)    
+
+    train_dataset = TensorDataset(photinfo, encoded)
+    #test_dataset = TensorDataset(X_test, y_test)
+
+    if args.distributed:
+        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset,shuffle=True)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler, drop_last=True)
 
-    tb= SummaryWriter(log_dir='/home/g4merz/logs/moco/DR2/tb/'+args.savepath)
+    print('Len', len(train_dataset))
+
+    #valid_loader = torch.utils.data.DataLoader(
+    #    test_dataset, batch_size=args.batch_size, shuffle=True,
+    #    num_workers=args.workers, pin_memory=True, sampler=None, drop_last=True)
+
+    #tb= SummaryWriter(log_dir='/home/g4merz/logs/moco/DR2/tb/'+args.savepath)
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -383,14 +349,14 @@ def main_worker(gpu, ngpus_per_node, args):
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
-        train(train_loader, model, criterion1, optimizer, epoch, args,tb)
+        train(train_loader, model, criterion, optimizer, epoch, args)
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
             if epoch%10==0:
                 save_checkpoint({
                     'epoch': epoch + 1,
-                    'arch': args.arch,
+                    'arch': 'phot_enc_mapping',
                     'state_dict': model.state_dict(),
                     'optimizer' : optimizer.state_dict(),
                 }, is_best=False, filename=args.savepath+'checkpoint_{:04d}.pth.tar'.format(epoch))
@@ -402,53 +368,50 @@ def mask_l2_loss(output, target,mask):
     return loss
 
     
-def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
-    batch_time = AverageMeter('Time', ':6.3f')
-    data_time = AverageMeter('Data', ':6.3f')
-    losses = AverageMeter('Loss', ':.4e')
-    top1 = AverageMeter('Acc@1', ':6.2f')
-    top5 = AverageMeter('Acc@5', ':6.2f')
-    progress = ProgressMeter(
-        len(train_loader),
-        [batch_time, data_time, losses],
-        prefix="Epoch: [{}]".format(epoch))
+def train(train_loader, model, criterion, optimizer, epoch, args):
+    #batch_time = AverageMeter('Time', ':6.3f')
+    #data_time = AverageMeter('Data', ':6.3f')
+    #losses = AverageMeter('Train Loss', ':.4e')
+    #losses = AverageMeter('Train Loss', ':.4e')
+
+    #top1 = AverageMeter('Acc@1', ':6.2f')
+    #top5 = AverageMeter('Acc@5', ':6.2f')
+    #progress = ProgressMeter(
+    #    len(train_loader),
+    #    [batch_time, data_time, losses],
+    #    prefix="Epoch: [{}]".format(epoch))
 
     # switch to train mode
+    train_loss = 0.0
     model.train()
 
     end = time.time()
-    for i, (images, _) in enumerate(train_loader):
+    for i, (data) in enumerate(train_loader):
         # measure data loading time
-        data_time.update(time.time() - end)
+        #data_time.update(time.time() - end)
 
         if args.gpu is not None:
-            images[0] = images[0].cuda(args.gpu, non_blocking=True)
-            images[2] = images[2].cuda(args.gpu, non_blocking=True)
-            #images[1] = images[1].cuda(args.gpu, non_blocking=True)
+            phot = data[0].cuda(args.gpu, non_blocking=True)
+            target = data[1].cuda(args.gpu, non_blocking=True)
+
             #full = images[0][:,:3,:].contiguous().cuda(args.gpu, non_blocking=True)
             #feedin = images[0][:,:2,:].contiguous().cuda(args.gpu,non_blocking=True)
             #feedink = images[1][:,:2,:].contiguous().cuda(args.gpu,non_blocking=True)
             
         # compute output
 
-        recon = model(im_q=images[0])
+        output = model(phot)
         #output,target,recon = model(...)
 
         #relabel to loss1
-        #loss = criterion1(output, target)
-
-        #loss = criterion1(recon,images[0])
-        loss = mask_l2_loss(recon,images[0],images[2])
-        
-        #loss = criterion1(recon,full)
-
-        #loss = args.alpha*loss1 + args.beta*loss2
-
+        tloss = criterion(output, target)
 
         # acc1/acc5 are (K+1)-way contrast classifier accuracy
         # measure accuracy and record loss
         #acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        losses.update(loss.item(), images[0].size(0))
+        
+        
+        #losses.update(loss.item(), encoded.size(0))
         #top1.update(acc1[0], images[0].size(0))
         #top5.update(acc5[0], images[0].size(0))
 
@@ -458,21 +421,29 @@ def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
         
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        loss.backward()
+        tloss.backward()
         optimizer.step()
 
         # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
+        #batch_time.update(time.time() - end)
+        #end = time.time()
 
+        train_loss+=tloss.item()
+
+    #valid_loss = 0.0
+    #model.eval()     # Optional when not using Model Specific layer
         
-        if i % args.print_freq == 0:
-            progress.display(i)
-            #print(loss1.item(),loss2.item())
+    #for data, labels in validloader:
+    #    if args.gpu is not None:
+    #        encoded = data[0].cuda(args.gpu, non_blocking=True)
+    #        target = data[1].cuda(args.gpu, non_blocking=True)
+    
+    #    output_val = model(encoded)
+    #    loss = criterion(output_val,labels)
+    #    valid_loss = loss.item() * encoded.size(0)
 
-
-    np.save(args.savepath+'recon_images.npy', recon.detach().cpu().numpy())
-    tb.add_scalar("Loss", losses.avg, epoch)
+    print(f'Epoch {epoch+1} \t\t Training Loss: {train_loss / (len(train_loader))}')#' \t\t Validation Loss: {valid_loss / len(validloader)}')
+    #tb.add_scalar("Loss", losses.avg, epoch)
     
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)

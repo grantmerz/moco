@@ -24,17 +24,19 @@ import torchvision.models as models
 
 import moco.loader
 import moco.builder_dec
+import moco.builder_auto
+
 import numpy as np
 import gc
 #import sys
 #sys.path.append('/home/g4merz/Galaxy_Query/moco/ssl-sky-surveys')
 
-from dataloader import get_data_loader
+from dataloader_mask2 import get_data_loader
 
 import custom_models.resnet
 import custom_models.resnet_orig
-import custom_models.decoder_prelu3 as custom_dec
-import custom_models.encoder3 as custom_enc
+import custom_models.decoder_prelu4 as custom_dec
+import custom_models.encoder4_squash as custom_enc
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -82,7 +84,7 @@ parser.add_argument('-b', '--batch-size', default=256, type=int,
 parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
                     metavar='LR', help='initial learning rate', dest='lr')
 
-parser.add_argument('--schedule', default=[70, 140], nargs='*', type=int,
+parser.add_argument('--schedule', default=[50, 150, 250], nargs='*', type=int,
                     help='learning rate schedule (when to drop lr by 10x)')
 
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -244,6 +246,7 @@ def main_worker(gpu, ngpus_per_node, args):
     #encoder = custom_models.deepcaps.CapsNet
 
     decoder = custom_dec.decoder
+
     model = moco.builder_dec.MoCo(
         encoder, decoder, outshape, 
         args.num_channels,args.moco_dim, args.moco_k, args.moco_m, args.moco_t, args.mlp)
@@ -282,9 +285,9 @@ def main_worker(gpu, ngpus_per_node, args):
         raise NotImplementedError("Only DistributedDataParallel is supported.")
 
     # define loss function (criterion) and optimizer
-    #criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
-    #criterion2 = nn.MSELoss().cuda(args.gpu)
-    criterion1 = nn.MSELoss().cuda(args.gpu)
+    criterion1 = nn.CrossEntropyLoss().cuda(args.gpu)
+    criterion2 = nn.MSELoss().cuda(args.gpu)
+    #criterion1 = nn.MSELoss().cuda(args.gpu)
     
     #optimizer = torch.optim.SGD(model.parameters(), args.lr,
     #                            momentum=args.momentum,
@@ -374,14 +377,15 @@ def main_worker(gpu, ngpus_per_node, args):
         num_workers=args.workers, pin_memory=True, sampler=train_sampler, drop_last=True)
 
     tb= SummaryWriter(log_dir='/home/g4merz/logs/moco/DR2/tb/'+args.savepath)
-
+    t0 = time.time()
+    
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
-        train(train_loader, model, criterion1, optimizer, epoch, args,tb)
+        train(train_loader, model, criterion1, criterion2, optimizer, epoch, args,tb)
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
@@ -393,12 +397,15 @@ def main_worker(gpu, ngpus_per_node, args):
                     'optimizer' : optimizer.state_dict(),
                 }, is_best=False, filename=args.savepath+'checkpoint_{:04d}.pth.tar'.format(epoch))
 
+    print('Training took', time.time()-t0)
     tb.close()
 
-
+def mask_l2_loss(output, target,mask):
+    loss = torch.mean(mask*(output - target)**2)
+    return loss
 
     
-def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
+def train(train_loader, model, criterion1, criterion2, optimizer, epoch, args,tb):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -406,7 +413,7 @@ def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
     top5 = AverageMeter('Acc@5', ':6.2f')
     progress = ProgressMeter(
         len(train_loader),
-        [batch_time, data_time, losses, top1, top5],
+        [batch_time, data_time, losses],
         prefix="Epoch: [{}]".format(epoch))
 
     # switch to train mode
@@ -419,6 +426,7 @@ def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
 
         if args.gpu is not None:
             images[0] = images[0].cuda(args.gpu, non_blocking=True)
+            images[2] = images[2].cuda(args.gpu, non_blocking=True)
             images[1] = images[1].cuda(args.gpu, non_blocking=True)
             #full = images[0][:,:3,:].contiguous().cuda(args.gpu, non_blocking=True)
             #feedin = images[0][:,:2,:].contiguous().cuda(args.gpu,non_blocking=True)
@@ -426,18 +434,18 @@ def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
             
         # compute output
 
-        output, target,recon = model(im_q=images[0], im_k=images[1])
+        output, target, recon = model(im_q=images[0], im_k=images[1])
         #output,target,recon = model(...)
 
         #relabel to loss1
-        #loss = criterion1(output, target)
+        loss1 = criterion1(output, target)
 
-
-        loss = criterion1(recon,images[0])
+        #loss = criterion1(recon,images[0])
+        loss2 = mask_l2_loss(recon,images[0],images[2])
         
         #loss = criterion1(recon,full)
 
-        #loss = args.alpha*loss1 + args.beta*loss2
+        loss = args.alpha*loss1 + args.beta*loss2
 
 
         # acc1/acc5 are (K+1)-way contrast classifier accuracy
@@ -463,10 +471,10 @@ def train(train_loader, model, criterion1, optimizer, epoch, args,tb):
         
         if i % args.print_freq == 0:
             progress.display(i)
-            #print(loss1.item(),loss2.item())
+            print(loss1.item(),loss2.item())
 
 
-    #np.save(args.savepath+'recon_images.npy', recon.detach().cpu().numpy())
+    np.save(args.savepath+'recon_images.npy', recon.detach().cpu().numpy())
     tb.add_scalar("Loss", losses.avg, epoch)
     
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
@@ -521,10 +529,9 @@ def adjust_learning_rate(optimizer, epoch, args):
     lr = args.lr
     if args.cos:  # cosine lr schedule
         lr *= 0.5 * (1. + math.cos(math.pi * epoch / args.epochs))
-    else:  # stepwise lr schedule change to power law
-        #for milestone in args.schedule:
-            #lr *= 0.1 if epoch >= milestone else 1.
-        lr*=0.95**(epoch)
+    else:  # stepwise lr schedule
+        for milestone in args.schedule:
+            lr *= 0.1 if epoch >= milestone else 1.
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
