@@ -1,3 +1,11 @@
+
+# Here is my implementation of MoCo: Momentum Contrast for Unsupervised Visual Representation Learning.  
+
+In addition to the MoCo framework, I implemented a decoder network to recover images from the latent space.  With this architecture, one can create a latent space that is robust to various augmentations (thanks to MoCo) and contains information that lets the decoder network recover the original image.  I used this network on DES galaxy thumbnails available publicly (https://des.ncsa.illinois.edu/desaccess/docs/apps.html)
+
+
+
+
 ## MoCo: Momentum Contrast for Unsupervised Visual Representation Learning
 
 <p align="center">
