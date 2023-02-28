@@ -1,7 +1,7 @@
 
 # Here is my implementation of MoCo: Momentum Contrast for Unsupervised Visual Representation Learning.  
 
-In addition to the MoCo framework, I implemented a decoder network to recover images from the latent space.  With this architecture, one can create a latent space that is robust to various augmentations (thanks to MoCo) and contains information that lets the decoder network recover (roughly) the original image.  I used this network on DES galaxy thumbnails available to the public (https://des.ncsa.illinois.edu/desaccess/docs/apps.html)
+In addition to the MoCo framework, I implemented a decoder network to recover images from the latent space.  With this architecture, one can create a latent space that is robust to various augmentations (thanks to MoCo) and contains information that lets the decoder network recover the original image.  I used this network on DES galaxy thumbnails available publicly (https://des.ncsa.illinois.edu/desaccess/docs/apps.html)
 
 Here's a sample of the DES galaxies that the network was trained on
 <p align="center">
@@ -20,7 +20,7 @@ This shows how similar the flipped galaxies are compared to their original count
   <img src="https://github.com/grantmerz/moco/blob/main/sim_placement_moco.png" width="700">
 </p>
 
-Every flipped galaxy is correctly recgonized as being the most similar to its original version!  Our latent space is robust to spatial rotations!  We could employ more augmentations to tailor our latent space.
+Every flipped galaxy is correctly recgonized as being the most similar to its original version!  Our latent space is robust to spatial rotations!  We could employ more augmentations to tailor how we want our latent space to be robust.
 
 
 We can also check the decoder to see if we can recover information back to the pixel space.  It turns out that the best setup involves a downweighting of the reconstruction loss at regions of empty space. This acts as a regularizer in order to recover information across a variety of images. For terrestrial datasets with little empty space, this might not be needed.  Or you could pick certain regions to mask so the network prioritizes different parts of an image
@@ -28,7 +28,7 @@ We can also check the decoder to see if we can recover information back to the p
   <img src="https://github.com/grantmerz/moco/blob/main/raw_recon_comp_128.png" width="700">
 </p>
 
-Not everything is recovered, and some color information is scrambled. With a larger sample, it's likely to improve.
+Not everything is recovered, and some color information is scrambled. With a larger sample, its likely to improve.
 
 ## MoCo: Momentum Contrast for Unsupervised Visual Representation Learning
 
