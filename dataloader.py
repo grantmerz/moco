@@ -17,7 +17,6 @@ import h5py
 from astropy.visualization import MinMaxInterval
 
 import skimage.transform
-from skimage.transform import rescale, resize
 
 #import sys
 #sys.path.append('/home/g4merz/galaxyQuery/moco')
@@ -139,18 +138,22 @@ class Scale:
         return image
 
 class Shift:
-    def __call__(self,image):
-        #image = image-image.min()+1e-1
+    def __call__(self,imageandmask):
+        image = imageandmask[0]
         image = np.log10(image)
-        return image
+        return image, imageandmask[1]
 
-
+    
 class Clip:
     def __call__(self,image):
         #image = np.maximum(0,image)
         maskind = image<=0
         image[maskind]=1e-1
-        return image
+        mask = np.ones((image.shape))
+        mask[maskind] = 0 #1e-6
+        
+        return image,mask
+
 
 class BandCut:
     def __init__(self,bands):
@@ -171,13 +174,6 @@ class BandCut:
     def __call__(self,image):
         imi = image[self.indices,:,:]
         return imi
-
-
-class Resize:
-    def __call__(self,image):
-        image = np.transpose(image, (1, 2, 0))
-        image = resize(image,(64,64))
-        return np.transpose(image, (2, 0, 1))
 
       
 class DESPNGDataset(Dataset):
@@ -275,7 +271,6 @@ def get_data_loader(data, scale, nrange, png, png_type,aug_plus, crop_size, jc_j
                 #transforms.RandomApply([moco.loader.GaussianBlur([.1, 2.])], p=0.5),
                 #Scale(scale),
                 #BandCut(['i']),
-                #Resize(),
                 RandomRotate(),
                 JitterCropFITS(outdim=crop_size,jitter_lim=jc_jit_limit),
                 #Normalize()
@@ -290,7 +285,7 @@ def get_data_loader(data, scale, nrange, png, png_type,aug_plus, crop_size, jc_j
             
             train_dataset = DESFITSDataset(
             traindir,
-            moco.loader.TwoCropsTransform(transforms.Compose(augmentation)))
+            moco.loader.TwoCropsTransformMask(transforms.Compose(augmentation)))
         
     else:
         # MoCo v1's aug: the same as InstDisc https://arxiv.org/abs/1805.01978

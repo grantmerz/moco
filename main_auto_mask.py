@@ -31,12 +31,12 @@ import gc
 #import sys
 #sys.path.append('/home/g4merz/Galaxy_Query/moco/ssl-sky-surveys')
 
-from dataloader_mask import get_data_loader
+from dataloader_mask2 import get_data_loader
 
 import custom_models.resnet
 import custom_models.resnet_orig
 import custom_models.decoder_prelu4 as custom_dec
-import custom_models.encoder4 as custom_enc
+import custom_models.encoder4_squash as custom_enc
 
 from torch.utils.tensorboard import SummaryWriter
 
