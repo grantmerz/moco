@@ -14,7 +14,7 @@ If we train an autoencoder network, we can generate a latent space in which each
   <img src="https://github.com/grantmerz/moco/blob/main/sim_placement_nomoco.png" width="700">
 </p>
 
-This shows how similar the flipped galaxies are compared to their original counterpart.  Ideally, all flipped galaxies should be first place in similarity. However, some galaxies are very, very dissimilar to their original versions! In astronomy, there is no preferred orientation of galaxies, so a representation of a galaxy should be robust to spatial augmentations.  Let's see if we can improve this with MoCo.  We use the same AE architecture, but add the momentum contrastive loss to encourage the network to encode augmentated version of the same galaxy into similar latent space values.  Check out those results.
+This shows how similar the flipped galaxies are compared to their original counterpart.  Flip1 = xaxis reflection, Flip2=yaxis reflection and Flip3=both axes.  Ideally, all flipped galaxies should be first place in similarity. However, some galaxies are very, very dissimilar to their original versions! In astronomy, there is no preferred orientation of galaxies, so a representation of a galaxy should be robust to spatial augmentations.  Let's see if we can improve this with MoCo.  We use the same AE architecture, but add the momentum contrastive loss to encourage the network to encode augmentated version of the same galaxy into similar latent space values.  Check out those results.
 
 <p align="center">
   <img src="https://github.com/grantmerz/moco/blob/main/sim_placement_moco.png" width="700">
